@@ -1,17 +1,3 @@
-# rust-passport-azure-ad
-
-Port of passport-azure-ad to Rust
-
-## Installation
-
-```bash
-cargo add passport_azure_ad
-```
-
-## Usage
-
-```rust
-// msal_test.rs
 use passport_azure_ad::{
     bearer_strategy::BearerStrategy,
     error::PassportError,
@@ -52,17 +38,3 @@ async fn test_msal_bearer() {
 
     assert!(validated.is_ok());
 }
-```
-
-## Test
-
-```bash
-# Source config file with exports:
-source <file> && cargo test
-# Source .env file
-set -o allexport && source .env && set +o allexport && cargo test
-```
-
-## License
-
-[MIT](https://choosealicense.com/licenses/mit/)
