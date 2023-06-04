@@ -1,73 +1,13 @@
-use anyhow;
-use std::error::Error;
-use crate::{types::enums::LogLevel, constants};
-use super::metadata::{Metadata, MetadataParams, Oidc};
+use std::{error::Error};
+use crate::{types::{StrategyOptions, Strategy}, constants, verifier, aadutils};
+use super::metadata::MetadataHandler;
 use poem::Request;
 use super::types::StrategyOptionsParams;
 use url::Url;
 use regex::Regex;
+use super::types::Payload;
 
 static BEARER_NAME: &str = "oauth-bearer";
-
-#[derive(Clone)]
-pub struct StrategyOptions {
-    pub clock_stew: u32,
-    pub pass_req_to_cb: bool,
-    pub validate_issuer: bool,
-    pub allow_multi_audiences: bool,
-    pub audience: Vec<String>,
-    pub is_b2c: bool,
-    pub policy_name: String,
-    pub issuer: Vec<String>,
-    pub client_id: String,
-    pub identity_metadata: String,
-    pub scope: Vec<String>,
-    pub log_level: LogLevel,
-    pub is_common_endpoint: bool,
-    pub logging_no_pii: bool
-}
-
-impl StrategyOptions {
-    pub fn new() -> Self {
-        Self {
-            clock_stew: constants::CLOCK_STEW,
-            pass_req_to_cb: false,
-            validate_issuer: false,
-            allow_multi_audiences: false,
-            audience: vec![],
-            is_b2c: false,
-            policy_name: String::new(),
-            issuer: vec![],
-            client_id: String::new(),
-            identity_metadata: String::new(),
-            scope: vec![],
-            log_level: LogLevel::Debug,
-            is_common_endpoint: false,
-            logging_no_pii: false
-        }
-    }
-}
-
-pub trait VerifyToken {
-    fn verify(&self) -> anyhow::Result<String>;
-
-    fn jwt_verify(&self, token: &str, metadata: Metadata) -> Result<(), Box<dyn Error>> {
-        Ok(())
-    }
-
-    fn load_metadata(&self, params: MetadataParams, next: impl Fn() -> ()) -> () {
-        ()
-    }
-
-    fn fail_with_log(&self, message: &str) -> Result<(), Box<dyn Error>> {
-        println!("[ERROR] {}", message);
-        Err(message.into())
-    }
-
-    fn authenticate(&self, req: Request) -> Result<(), Box<dyn Error>> {
-        Ok(())
-    }
-}
 
 pub struct BearerStrategy {
     pub name: String,
@@ -79,7 +19,7 @@ impl BearerStrategy {
         let mut options: StrategyOptions = StrategyOptions::new();
 
         // client_id
-        let mut client_id: String = String::new();
+        let client_id: String;
         if params.client_id.is_some() {
             client_id = params.client_id.unwrap();
             options.client_id = client_id.clone();
@@ -180,37 +120,51 @@ impl BearerStrategy {
             options
         }
     }
-}
 
-impl VerifyToken for BearerStrategy {
-    fn verify(&self) -> anyhow::Result<String> {
-        Ok(String::new())
+    pub async fn jwt_verify(&self, token: &str, metadata: &MetadataHandler) -> Result<Payload, Box<dyn Error>> {
+        verifier::verify(token.to_string(), metadata, self.clone()).await
     }
 
-    fn jwt_verify(&self, token: &str, metadata: Metadata) -> Result<(), Box<dyn Error>> {
-        Ok(())
-    }
-
-    fn authenticate(&self, req: Request) -> Result<(), Box<dyn Error>> {
+    pub async fn authenticate(&self, req: Request) -> Result<Payload, Box<dyn Error>> {
         if let Some(bearer) = req.header("authorization") {
             let parts = bearer.split(" ").collect::<Vec<&str>>();
 
-            if (parts.len() != 2usize || parts[0].to_lowercase() != "bearer" || parts[1].is_empty()) {
+            if parts.len() != 2usize || parts[0].to_lowercase() != "bearer" || parts[1].is_empty() {
                 return Err("Authorization is not valid".into());
             }
 
             let token = parts[1];
             let identity_metadata = self.options.clone().identity_metadata;
-            let metadata: Metadata = Metadata::new(
-                identity_metadata.to_string(),
-                Oidc::empty(),
-                String::new(),
+            let metadata_url = aadutils::concat_url(
+                identity_metadata,
+                vec![
+                    format!("{}={}", constants::LIBRARY_PRODUCT_PARAMETER_NAME, constants::LIBRARY_PRODUCT),
+                    format!("{}={}", constants::LIBRARY_VERSION_PARAMETER_NAME, constants::LIBRARY_VERSION)
+                ]
+            );
+            let mut metadata = MetadataHandler::new(
+                metadata_url,
+                String::from("oidc"),
+                false,
                 None
             );
 
-            return self.jwt_verify(token, metadata);
+            metadata.fetch().await?;
+    
+            return self.jwt_verify(token, &metadata).await;
         } else {
             return Err("No 'authorization' header was found".into());
         }
+    }
+
+}
+
+impl Strategy for BearerStrategy {
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn options(&self) -> StrategyOptions {
+        self.options.clone()
     }
 }

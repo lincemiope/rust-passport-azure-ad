@@ -1,26 +1,28 @@
-use super::aadutils::rsa_pub_key_pem;
-use super::json_web_token::JWTKey;
+use super::types::OidcKey;
 use std::error::Error;
+use alcoholic_jwt::JWKS;
+use reqwest;
+use serde::Deserialize;
 
 pub struct Oidc {
-    pub algorithms: Option<Vec<String>>,
-    pub authorization_endpoint: Option<String>,
-    pub end_session_endpoint: Option<String>,
-    pub issuer: Option<Vec<String>>,
-    pub token_endpoint: Option<String>,
-    pub userinfo_endpoint: Option<String>,
-    pub keys: Vec<JWTKey>
+    pub algorithms: Vec<String>,
+    pub authorization_endpoint: String,
+    pub end_session_endpoint: String,
+    pub issuer: String,
+    pub token_endpoint: String,
+    pub userinfo_endpoint: String,
+    pub keys: Vec<OidcKey>
 }
 
 impl Oidc {
-    pub fn new(keys: Vec<JWTKey>) -> Self {
+    pub fn new(keys: Vec<OidcKey>) -> Self {
         Self {
-            algorithms: None,
-            authorization_endpoint: None,
-            end_session_endpoint: None,
-            issuer: None,
-            token_endpoint: None,
-            userinfo_endpoint: None,
+            algorithms: vec![],
+            authorization_endpoint: String::new(),
+            end_session_endpoint: String::new(),
+            issuer: String::new(),
+            token_endpoint: String::new(),
+            userinfo_endpoint: String::new(),
             keys
         }
     }
@@ -28,58 +30,126 @@ impl Oidc {
     pub fn empty() -> Self {
         Self::new(vec![])
     }
+
+    pub fn from_metadata(metadata: &Metadata) -> Self {
+        Self {
+            algorithms: metadata.id_token_signing_alg_values_supported.clone(),
+            authorization_endpoint: metadata.authorization_endpoint.clone(),
+            end_session_endpoint: metadata.end_session_endpoint.clone(),
+            issuer: metadata.issuer.clone(),
+            token_endpoint: metadata.token_endpoint.clone(),
+            userinfo_endpoint: metadata.userinfo_endpoint.clone(),
+            keys: vec![]
+        }
+    }
 }
 
+#[derive(Deserialize)]
 pub struct Metadata {
-    pub url: String,
-    pub oidc: Oidc,
-    pub metadata: Option<()>,
-    pub authtype: String,
-    pub logging_no_pii: bool,
-    pub https_proxy_agent: Option<String>,
+    pub token_endpoint: String,
+    pub token_endpoint_auth_methods_supported: Vec<String>,
+    pub jwks_uri: String,
+    pub response_modes_supported: Vec<String>,
+    pub subject_types_supported: Vec<String>,
+    pub id_token_signing_alg_values_supported: Vec<String>,
+    pub response_types_supported: Vec<String>,
+    pub scopes_supported: Vec<String>,
+    pub issuer: String,
+    pub request_uri_parameter_supported: bool,
+    pub userinfo_endpoint: String,
+    pub authorization_endpoint: String,
+    pub device_authorization_endpoint: String,
+    pub http_logout_supported: bool,
+    pub frontchannel_logout_supported: bool,
+    pub end_session_endpoint: String,
+    pub claims_supported: Vec<String>,
+    pub kerberos_endpoint: String,
+    pub tenant_region_scope: String,
+    pub cloud_instance_name: String,
+    pub msgraph_host: String,
+    pub rbac_url: String
 }
-
-pub struct MetadataParams;
-
 
 impl Metadata {
-    pub fn new(url: String, oidc: Oidc, authtype: String, https_proxy_agent: Option<String>) -> Self {
+    pub fn empty() -> Self {
+        Self {
+            token_endpoint: String::new(),
+            token_endpoint_auth_methods_supported: vec![],
+            jwks_uri: String::new(),
+            response_modes_supported: vec![],
+            subject_types_supported: vec![],
+            id_token_signing_alg_values_supported: vec![],
+            response_types_supported: vec![],
+            scopes_supported: vec![],
+            issuer: String::new(),
+            request_uri_parameter_supported: false,
+            userinfo_endpoint: String::new(),
+            authorization_endpoint: String::new(),
+            device_authorization_endpoint: String::new(),
+            http_logout_supported: false,
+            frontchannel_logout_supported: false,
+            end_session_endpoint: String::new(),
+            claims_supported: vec![],
+            kerberos_endpoint: String::new(),
+            tenant_region_scope: String::new(),
+            cloud_instance_name: String::new(),
+            msgraph_host: String::new(),
+            rbac_url: String::new()
+        }
+    }
+}
+
+pub struct MetadataHandler {
+    pub url: String,
+    pub oidc: Oidc,
+    pub jwks: Option<JWKS>,
+    pub metadata: Metadata,
+    pub authtype: String,
+    pub logging_no_pii: bool,
+    pub https_proxy_agent: String,
+}
+
+
+
+impl MetadataHandler {
+    pub fn new(url: String, authtype: String, logging_no_pii: bool, https_proxy_agent: Option<String>) -> Self {
         Self {
             url,
-            oidc,
+            oidc: Oidc::empty(),
+            jwks: None,
             authtype,
-            https_proxy_agent,
-            logging_no_pii: false,
-            metadata: None
+            https_proxy_agent: https_proxy_agent.unwrap_or(String::new()),
+            logging_no_pii,
+            metadata: Metadata::empty()
         }
     }
-    pub async fn build(url: String, oidc: Oidc, authtype: String, https_proxy_agent: Option<String>) -> Result<Self, Box<dyn Error>> {
-        Ok(Metadata::new(url, oidc, authtype, https_proxy_agent))
-    }
 
-    pub fn fetch(&self, cb: impl FnOnce() -> ()) -> () {
-        cb()
-    }
-    pub fn generate_oidc_pem(&self, kid: String) -> Result<String, Box<dyn Error>> {
-        let mut pub_key: String = String::new();
+    pub async fn fetch(&mut self) -> Result<(), Box<dyn Error>> {
+        let metadata: Metadata = reqwest::Client::new()
+            .get(&self.url)
+            .header("User-Agent", &self.https_proxy_agent)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
 
-        let cloned_keys = self.oidc.keys.clone();
+        self.metadata = metadata;
+        self.oidc = Oidc::from_metadata(&self.metadata);
 
-        let found_key = cloned_keys
-            .iter()
-            .filter(|k| k.kid == kid && !k.n.is_empty() && !k.e.is_empty())
-            .next();
+        let jwks: JWKS = reqwest::Client::new()
+        .get(&self.metadata.jwks_uri)
+        .header("User-Agent", &self.https_proxy_agent)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
 
-        if let Some(key) = found_key {
-            pub_key = rsa_pub_key_pem(&key.n, &key.e);
-        } else {
-            return Err("Key not found".into());
-        }
+        self.jwks = Some(jwks);
 
-        if pub_key.is_empty() {
-            return Err("Key could not be translated into a PEM".into());
-        }
-
-        Ok(pub_key)
+        Ok(())
     }
 }

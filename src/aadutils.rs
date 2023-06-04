@@ -187,3 +187,30 @@ pub fn same_site_not_allowed(user_agent: &str) -> bool {
 
     false
 }
+
+
+pub fn vec_diff<T: std::cmp::PartialEq>(v1: &Vec<T>, v2: &Vec<T>) -> bool {
+    if v1.len() != v2.len() {
+        return true;
+    }
+
+    let mut diff: Vec<&T> = vec![];
+
+    v1.iter().for_each(|e| {
+        if !v2.contains(e) {
+            diff.push(&e);
+        }
+    });
+
+    if diff.len() > 0 {
+        return true;
+    }
+
+    v2.iter().for_each(|e| {
+        if !v1.contains(e) {
+            diff.push(e);
+        }
+    });
+
+    diff.len() > 0
+}
