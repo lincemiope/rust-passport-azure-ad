@@ -1,11 +1,15 @@
+extern crate alcoholic_jwt;
+
 use std::{error::Error};
-use crate::{types::{StrategyOptions, Strategy}, constants, verifier, aadutils};
+use super::{types::{StrategyOptions, Strategy}, constants, aadutils};
 use super::metadata::MetadataHandler;
 use poem::Request;
 use super::types::StrategyOptionsParams;
 use url::Url;
 use regex::Regex;
 use super::types::Payload;
+use jws::compact::decode_unverified;
+use alcoholic_jwt::{Validation, validate, token_kid};
 
 static BEARER_NAME: &str = "oauth-bearer";
 
@@ -122,10 +126,72 @@ impl BearerStrategy {
     }
 
     pub async fn jwt_verify(&self, token: &str, metadata: &MetadataHandler) -> Result<Payload, Box<dyn Error>> {
-        verifier::verify(token.to_string(), metadata, self.clone()).await
+        let s_opts = &self.options;
+
+        // nobody cares
+        /*
+        if s_opts.audience.is_empty() {
+            return Err("In verifier.verify: audience is not valid".into());
+        }
+        */
+    
+        if metadata.oidc.algorithms.is_empty() {
+            return Err("In verifier.verify: algorithms is not valid".into());
+        }
+    
+        let parts: Vec<&str> = token.split(".").collect();
+    
+        if parts.len() != 3 {
+            return Err("In verifier.verify: jwt_string is malformed".into());
+        }
+    
+        if parts[2].is_empty() {
+            return Err("In verifier.verify: signature is missing in jwt_string".into());
+        }
+    
+        let decoded = decode_unverified(token.clone().as_bytes()).unwrap();
+        let payload = Payload::from_message(&decoded.0.payload).unwrap();
+    
+        // Several types of built-in validations are provided:
+        let validations = vec![
+            Validation::Issuer(self.options.issuer[0].clone()),
+            Validation::SubjectPresent
+        ];
+    
+        // If a JWKS contains multiple keys, the correct KID first
+        // needs to be fetched from the token headers.
+        let kid = token_kid(&token)
+            .expect("In verifier.verify: failed to decode token headers")
+            .expect("In verifier.verify: no 'kid' claim present in token");
+    
+        if let Some(jwks) = &metadata.jwks {
+            let jwk = jwks.find(&kid)
+                .expect("In verifier.verify: specified key not found in set");
+    
+            if let Ok(valid) = validate(&token, jwk, validations) {
+                let scopes: Vec<String> = valid.claims
+                    .as_object()
+                    .unwrap()
+                    .get("scp")
+                    .unwrap()
+                    .as_array()
+                    .unwrap_or(&vec![])
+                    .into_iter()
+                    .map(|e| e.to_string())
+                    .collect();
+                if !scopes.is_empty() && !scopes.contains(&payload.scp) {
+                    return Err("In verifier.verify: token scopes are not valid".into());
+                }
+                return Ok(payload)
+            } else {
+                return Err("In verifier.verify: token validation has failed!".into());
+            }
+        } else {
+            return Err("In verifier.verify: no JWKS are present".into());
+        }
     }
 
-    pub async fn authenticate(&self, req: Request) -> Result<Payload, Box<dyn Error>> {
+    pub async fn authenticate(&self, req: &Request) -> Result<Payload, Box<dyn Error>> {
         if let Some(bearer) = req.header("authorization") {
             let parts = bearer.split(" ").collect::<Vec<&str>>();
 

@@ -1,5 +1,5 @@
 use std::error::Error;
-use crate::constants;
+use super::constants;
 use jws::JsonObject;
 use serde::Deserialize;
 use serde_json;
@@ -114,7 +114,7 @@ impl Header {
   }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Payload {
   /// audience
   pub aud: String,
