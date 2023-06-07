@@ -11,7 +11,6 @@ cargo add passport_azure_ad
 ## Usage
 
 ```rust
-// msal_test.rs
 use passport_azure_ad::{
     bearer_strategy::BearerStrategy,
     error::PassportError,
@@ -19,9 +18,11 @@ use passport_azure_ad::{
     util,
 };
 use std::env;
+use dotenvy::dotenv;
 
 #[tokio::test]
 async fn test_msal_bearer() {
+    dotenv().ok();
     let token = env::var("BEARER_TOKEN")
         .expect("'BEARER_TOKEN' is not defined")
         .to_string();
@@ -36,7 +37,7 @@ async fn test_msal_bearer() {
         Some(false),                                       // allow_multi_audiences
         None,                                              // audience
         Some(client_id),                                   // client_id
-        None,                                              // clock_stew
+        None,                                              // clock_skew
         Some(util::open_id_config_url(tenant_id.clone())), // identity_metadata
         Some(false),                                       // ignore_expiration
         Some(false),                                       // is_b2c
@@ -52,15 +53,6 @@ async fn test_msal_bearer() {
 
     assert!(validated.is_ok());
 }
-```
-
-## Test
-
-```bash
-# Source config file with exports:
-source <file> && cargo test
-# Source .env file
-set -o allexport && source .env && set +o allexport && cargo test
 ```
 
 ## License

@@ -152,11 +152,27 @@ impl BearerStrategy {
         }
     }
 
-    pub async fn jwt_verify(
+    pub async fn authenticate(
         &self,
         token: String,
-        handler: &mut MetadataHandler,
     ) -> Result<Payload, PassportError> {
+        let identity_metadata = &self.options.identity_metadata;
+        let metadata_url = util::concat_url(
+            identity_metadata.to_string(),
+            vec![
+                format!(
+                    "{}={}",
+                    constants::LIBRARY_PRODUCT_PARAMETER_NAME,
+                    constants::LIBRARY_PRODUCT
+                ),
+                format!(
+                    "{}={}",
+                    constants::LIBRARY_VERSION_PARAMETER_NAME,
+                    constants::LIBRARY_VERSION
+                ),
+            ],
+        );
+        let mut handler = MetadataHandler::new(metadata_url, String::from("oidc"), None);
         let metadata = handler.metadata().await.unwrap();
         let jwks = handler.jwks().await.unwrap();
 
@@ -179,7 +195,7 @@ impl BearerStrategy {
         if parts[2].is_empty() {
             return util::fail_with_log::<Payload>(
                 "BearerStrategy.verify",
-                "signature is missing in 'jwt_string",
+                "signature is missing in 'jwt_string'",
             );
         }
 
@@ -245,28 +261,6 @@ impl BearerStrategy {
         } else {
             util::fail_with_log::<Payload>("BearerStrategy.verify", "no JWKS are present")
         }
-    }
-
-    pub async fn authenticate(&self, token: String) -> Result<Payload, PassportError> {
-        let identity_metadata = &self.options.identity_metadata;
-        let metadata_url = util::concat_url(
-            identity_metadata.to_string(),
-            vec![
-                format!(
-                    "{}={}",
-                    constants::LIBRARY_PRODUCT_PARAMETER_NAME,
-                    constants::LIBRARY_PRODUCT
-                ),
-                format!(
-                    "{}={}",
-                    constants::LIBRARY_VERSION_PARAMETER_NAME,
-                    constants::LIBRARY_VERSION
-                ),
-            ],
-        );
-        let mut handler = MetadataHandler::new(metadata_url, String::from("oidc"), None);
-
-        self.jwt_verify(token, &mut handler).await
     }
 }
 
