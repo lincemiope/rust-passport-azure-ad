@@ -8,12 +8,8 @@ keywords = ["MSAL", "JWT", "Bearer", "web", "token"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/lincemiope/rust-passport-azure-ad"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
-
-[[test]]
-name = "passport_azure_ad-test"
-path = "src/tests.rs"
 
 [dependencies]
 serde = { version = "1.0.163", features = ["derive"] }
@@ -23,5 +19,4 @@ regex = "1.8.3"
 url = "2.3.1"
 reqwest = { version = "0.11.18", features = ["json"] }
 alcoholic_jwt = "4091.0.0"
-tokio = { version = "1.28.2", features = ["macros"] }
 memory-cache-rs = "0.2.0"
