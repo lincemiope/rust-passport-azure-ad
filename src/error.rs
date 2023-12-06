@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PassportError {
     source: String,
     message: String,

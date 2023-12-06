@@ -19,7 +19,7 @@ pub fn concat_url(url: String, rest: Vec<String>) -> String {
         first_mark = '&';
     }
 
-    vec![url, first_mark.to_string(), rest.join("&")].join("")
+    [url, first_mark.to_string(), rest.join("&")].join("")
 }
 
 /// Checks if a vector of T contais all Ts in content

@@ -13,8 +13,7 @@ cargo add passport_azure_ad
 ```rust
 use passport_azure_ad::{
     bearer_strategy::BearerStrategy,
-    error::PassportError,
-    types::{LogLevel, Payload},
+    types::LogLevel,
     util,
 };
 use std::env;
@@ -49,7 +48,7 @@ async fn test_msal_bearer() {
     )
     .unwrap();
 
-    let validated: Result<Payload, PassportError> = bearer.authenticate(token).await;
+    let validated = bearer.authenticate(token).await;
 
     assert!(validated.is_ok());
 }
@@ -58,3 +57,4 @@ async fn test_msal_bearer() {
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)
+

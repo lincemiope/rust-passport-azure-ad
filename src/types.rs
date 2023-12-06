@@ -5,6 +5,17 @@ use serde_json;
 use std;
 use std::error::Error;
 
+pub trait FromMsg<'a, T: Deserialize<'a> + Clone> {
+    fn from_message(message: &'a [u8]) -> Result<T, Box<dyn Error>> {
+        if let Ok(s) = std::str::from_utf8(message) {
+            if let Ok(jwt_payload) = serde_json::from_str::<T>(s) {
+                return Ok(jwt_payload);
+            }
+        }
+        Err("No valid payload was provided".into())
+    }
+}
+
 #[derive(Clone)]
 pub enum LogLevel {
     Trace = 10,
@@ -54,7 +65,7 @@ pub trait Strategy {
 }
 
 #[derive(Deserialize)]
-pub struct Header {
+pub struct AccessHeader {
     /// algorithm
     pub alg: String,
     /// key id
@@ -63,7 +74,7 @@ pub struct Header {
     pub typ: String,
 }
 
-impl Header {
+impl AccessHeader {
     pub fn from_json(header: &JsonObject) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
             alg: header.get("alg").unwrap().as_str().unwrap().to_string(),
@@ -73,8 +84,70 @@ impl Header {
     }
 }
 
+#[derive(Deserialize)]
+pub struct IdHeader {
+    /// algorithm
+    pub alg: String,
+    /// key id
+    pub kid: String,
+    /// token type (e.g RS256, HS256)
+    pub typ: String,
+    pub x5t: String,
+}
+
+impl IdHeader {
+    pub fn from_json(header: &JsonObject) -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            alg: header.get("alg").unwrap().as_str().unwrap().to_string(),
+            kid: header.get("kid").unwrap().as_str().unwrap().to_string(),
+            typ: header.get("typ").unwrap().as_str().unwrap().to_string(),
+            x5t: header.get("x5y").unwrap().as_str().unwrap().to_string(),
+        })
+    }
+}
+
 #[derive(Deserialize, Clone)]
-pub struct Payload {
+pub struct IdPayload {
+    /// audience
+    pub aud: String,
+    /// issuer
+    pub iss: String,
+    /// issued at (timestamp)
+    pub iat: u32,
+    /// not before (timestamp)
+    pub nbf: u32,
+    /// expiration (timestamp)
+    pub exp: u32,
+    pub acr: String,
+    pub aio: String,
+    pub amr: Vec<String>,
+    pub appid: String,
+    pub appidacr: String,
+    pub email: String,
+    pub family_name: String,
+    pub given_name: String,
+    pub ipaddr: String,
+    pub name: String,
+    pub oid: String,
+    pub onprem_sid: String,
+    pub rh: String,
+    /// scope
+    pub scp: String,
+    /// subject
+    pub sub: String,
+    pub tid: String,
+    pub unique_name: String,
+    /// username
+    pub upn: String,
+    pub uti: String,
+    /// access token version
+    pub ver: String,
+}
+
+impl FromMsg<'_, IdPayload> for IdPayload {}
+
+#[derive(Deserialize, Clone)]
+pub struct AccessPayload {
     /// audience
     pub aud: String,
     /// issuer
@@ -105,16 +178,7 @@ pub struct Payload {
     pub ver: String,
 }
 
-impl Payload {
-    pub fn from_message(message: &[u8]) -> Result<Self, Box<dyn Error>> {
-        if let Ok(s) = std::str::from_utf8(message) {
-            if let Ok(jwt_payload) = serde_json::from_str::<Payload>(s) {
-                return Ok(jwt_payload);
-            }
-        }
-        Err("No valid payload was provided".into())
-    }
-}
+impl FromMsg<'_, AccessPayload> for AccessPayload {}
 
 pub struct Signature {
     // exponent
@@ -125,8 +189,24 @@ pub struct Signature {
     pub n: String,
 }
 
-pub struct Token {
-    pub header: Header,
-    pub payload: Payload,
+pub struct AccessToken {
+    pub header: AccessHeader,
+    pub payload: AccessPayload,
     pub signature: Signature,
+}
+
+pub struct IdToken {
+    pub header: IdHeader,
+    pub payload: IdPayload,
+    pub signature: Signature,
+}
+
+pub enum Token {
+    AccessToken(AccessToken),
+    IdToken(IdToken),
+}
+
+pub enum Payload {
+    AccessPayload(AccessPayload),
+    IdPayload(IdPayload),
 }
