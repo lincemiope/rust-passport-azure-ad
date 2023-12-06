@@ -53,7 +53,7 @@ impl MetadataHandler {
         Self {
             url,
             authtype,
-            https_proxy_agent: https_proxy_agent.unwrap_or(String::new()),
+            https_proxy_agent: https_proxy_agent.unwrap_or_default(),
             cache: MemoryCache::new(),
         }
     }

@@ -1,5 +1,7 @@
 extern crate alcoholic_jwt;
 
+use crate::types::{AccessPayload, FromMsg, IdPayload};
+
 use super::error::PassportError;
 use super::metadata::MetadataHandler;
 use super::types::Payload;
@@ -59,7 +61,7 @@ impl BearerStrategy {
             if audience_value.is_empty() {
                 options.audience = vec![
                     options.client_id.clone(),
-                    vec![String::from("spn:"), options.client_id.clone()].join(""),
+                    [String::from("spn:"), options.client_id.clone()].join(""),
                 ];
             }
         }
@@ -152,10 +154,7 @@ impl BearerStrategy {
         }
     }
 
-    pub async fn authenticate(
-        &self,
-        token: String,
-    ) -> Result<Payload, PassportError> {
+    pub async fn authenticate(&self, token: String) -> Result<Payload, PassportError> {
         let identity_metadata = &self.options.identity_metadata;
         let metadata_url = util::concat_url(
             identity_metadata.to_string(),
@@ -200,8 +199,16 @@ impl BearerStrategy {
         }
 
         let decoded = decode_unverified(token.clone().as_bytes()).unwrap();
-        let payload = Payload::from_message(&decoded.0.payload).unwrap();
-
+        let payload = if let Ok(access_payload) = AccessPayload::from_message(&decoded.0.payload) {
+            Payload::AccessPayload(access_payload)
+        } else if let Ok(id_payload) = IdPayload::from_message(&decoded.0.payload) {
+            Payload::IdPayload(id_payload)
+        } else {
+            return util::fail_with_log::<Payload>(
+                "BearerStrategy.verify",
+                "no valid payload was given",
+            );
+        };
         // Several types of built-in validations are provided:
         let mut validations = vec![Validation::SubjectPresent];
 
